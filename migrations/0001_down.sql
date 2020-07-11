@@ -1,0 +1,14 @@
+START TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+UPDATE migration SET version='0000';
+
+DROP TABLE sample_values;
+DROP TABLE samples;
+DROP TABLE fields;
+DROP TABLE timer_events;
+
+DROP TABLE activities;
+
+COMMIT;
