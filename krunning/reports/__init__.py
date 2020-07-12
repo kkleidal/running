@@ -1,1 +1,1 @@
-from . import race_pace
+from . import race_pace, power_curve
