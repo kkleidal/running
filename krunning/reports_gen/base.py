@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List, Any
 import argparse
+import pandas as pd
 
 import matplotlib.pyplot as plt
 
@@ -33,6 +34,12 @@ class ReportSection(ABC):
     @abstractmethod
     def add_table(self) -> "ReportTable":
         pass
+
+    def add_table_from_df(self, df: pd.DataFrame):
+        table = self.add_table()
+        table.add_row(df.columns)
+        for _, row in df.iterrows():
+            table.add_row([str(cell) for cell in row])
 
     @abstractmethod
     def add_figure(self, figure: plt.Figure, caption: Optional[str] = None):

@@ -17,6 +17,7 @@ from krunning.db import conn_dict_from_env
 
 from ..constants import KG_PER_LB
 from ..data_provider import SpeedPowerFitFilesDataProvider
+from ..db.utils import get_conn
 from ..reports_gen import reports, ReportGenerator, ReportBuilder
 
 
@@ -38,15 +39,7 @@ class PowerCurveGenerator(ReportGenerator):
         pass
 
     def generate_report(self, args, report_builder: ReportBuilder):
-        conn = psycopg2.connect(**conn_dict_from_env())
-        with conn:
-            cur = conn.cursor()
-
-            # Make sure the DB schema is at the expected migration
-            cur.execute("SELECT version FROM migration LIMIT 1;")
-            (version,) = cur.fetchone()
-            assert version == "0001"
-
+        with get_conn(1) as cur:
             # Get activities within 90 days
             cur.execute(
                 "SELECT id FROM activities WHERE (NOW() - created) < '90 days'::interval;"
@@ -113,6 +106,8 @@ class PowerCurveGenerator(ReportGenerator):
                 # For every span of contiguous running...
                 for times, powers in spans:
                     # Interpolate the power samples, 1 every second:
+                    if len(times) == 0:
+                        continue
                     X = np.arange(0, np.floor(np.max(times) + 1))
                     interpolator = scipy.interpolate.interp1d(times, powers)
                     Y = interpolator(X)
