@@ -42,11 +42,12 @@ class PowerCurveGenerator(ReportGenerator):
         with get_conn(1) as cur:
             # Get activities within 90 days
             cur.execute(
-                "SELECT id FROM activities WHERE (NOW() - created) < '90 days'::interval;"
+                "SELECT id, (NOW() - created) as age FROM activities WHERE (NOW() - created) < '90 days'::interval;"
             )
 
             power_curve_buckets = {}
-            for (activity_id,) in list(cur):
+            for (activity_id, age) in list(cur):
+                age: datetime.timedelta
                 logging.info("ACTIVITY %d", activity_id)
                 # Get places the watch was started and stopped
                 cur.execute(
@@ -72,36 +73,24 @@ class PowerCurveGenerator(ReportGenerator):
                 )
                 power_events = [PowerEvent(*row) for row in list(cur)]
                 events = sorted(timer_events + power_events)
-                started = False
 
-                powers = None
-                times = None
+                powers = []
+                times = []
                 start_time = None
 
                 # Extract spans of running between starting and pausing watch
                 spans = []
                 for i, event in enumerate(events):
                     if isinstance(event, PowerEvent):
-                        if started:
-                            powers.append(event.power)
-                            if start_time is None:
-                                start_time = event.created
-                            times.append((event.created - start_time).total_seconds())
+                        powers.append(event.power)
+                        if start_time is None:
+                            start_time = event.created
+                        times.append((event.created - start_time).total_seconds())
                     elif isinstance(event, TimerEvent):
-                        if event.event_type == "start":
-                            powers = []
-                            times = []
-                            start_time = None
-                            started = True
-                        elif event.event_type == "stop_all":
-                            spans.append((np.array(times), np.array(powers)))
-                            powers = None
-                            times = None
-                            start_time = None
-                        else:
-                            raise NotImplementedError(event)
+                        pass
                     else:
                         raise NotImplementedError(event)
+                spans.append((times, powers))
 
                 # For every span of contiguous running...
                 for times, powers in spans:
@@ -120,7 +109,11 @@ class PowerCurveGenerator(ReportGenerator):
                         average_power_at_duration = np.max(
                             (Ysum[duration:] - Ysum[:-duration]) / duration
                         )
-                        value = (average_power_at_duration, activity_id)
+                        value = (
+                            average_power_at_duration,
+                            age.total_seconds() / (24 * 3600),
+                            activity_id,
+                        )
                         if (
                             duration not in power_curve_buckets
                             or power_curve_buckets[duration] < value
@@ -130,6 +123,7 @@ class PowerCurveGenerator(ReportGenerator):
         # Plot
         durations = np.array(sorted(power_curve_buckets.keys()))
         powers = np.array([power_curve_buckets[duration][0] for duration in durations])
+        ages = np.array([power_curve_buckets[duration][1] for duration in durations])
 
         body = report_builder.body()
         body.add_title("Power Curve")
@@ -141,7 +135,9 @@ class PowerCurveGenerator(ReportGenerator):
         body.add_paragraph("We use data from the past 90 days.")
 
         plt.title("Power Curve")
-        plt.plot(durations / 60, powers)
+        # plt.plot(durations / 60, powers)
+        plt.scatter(durations / 60, powers, c=ages, marker="+", s=1.0)
+        plt.colorbar()
         plt.ylabel("Power (W)")
         plt.xlabel("Duration (min)")
         body.add_figure(plt.gcf())
